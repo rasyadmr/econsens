@@ -12,6 +12,7 @@ import string
 import time
 from model import IndoBERTCustom
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download
 
 st.set_page_config(
     page_title="EconSens - Klasifikasi Sentimen Ekonomi Indonesia",
@@ -83,58 +84,128 @@ def halaman_utama():
             st.session_state.page = 'prediksi'
             st.rerun()
 
+# @st.cache_resource
+# def load_model():
+#     try:
+#         MODEL_REPO = "rasyadmr/skripsi_indobert"
+#         MODEL_FILENAME = "indobert_model.pth"
+#         TOKENIZER_NAME = "indobenchmark/indobert-base-p1"
+
+#         print(MODEL_FILENAME)
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+#         with st.spinner("Memuat model..."):
+#             try:
+#                 model_data = torch.load(MODEL_FILENAME, map_location=device)
+#             except Exception as e:
+#                 st.error(f"Tidak dapat membaca file model: {str(e)}")
+#                 return None, None, None
+
+#             if 'model_config' not in model_data:
+#                 st.error("File model tidak memiliki konfigurasi yang diperlukan")
+#                 return None, None, None
+
+#             model_config = model_data['model_config']
+#             NUM_LABELS = model_config.get('num_labels', 2)
+#             DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
+#             HIDDEN_DIM = model_config.get('hidden_dim', 256)
+
+#             tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+
+#             config = AutoConfig.from_pretrained(
+#                 TOKENIZER_NAME,
+#                 num_labels=NUM_LABELS,
+#                 return_dict=True
+#             )
+
+#             model = IndoBERTCustom.from_pretrained(
+#                 TOKENIZER_NAME,
+#                 config=config,
+#                 dropout_rate=DROPOUT_RATE,
+#                 hidden_dim=HIDDEN_DIM
+#             )
+
+#             # Load state dict
+#             if 'model_state_dict' in model_data:
+#                 model.load_state_dict(model_data['model_state_dict'], strict=True)
+#             else:
+#                 st.error("File model tidak memiliki model_state_dict")
+#                 return None, None, None
+
+#             model.eval()
+#             model = model.to(device)
+
+#             return tokenizer, model, device
+
+#     except Exception as e:
+#         st.error(f"Error memuat model: {str(e)}")
+#         return None, None, None
+
 @st.cache_resource
 def load_model():
     try:
-        MODEL_PATH = "./best_indobert_model.pth"
+        MODEL_REPO = "rasyadmr/indobert_econsens"
+        MODEL_FILENAME = "model.pth"
         TOKENIZER_NAME = "indobenchmark/indobert-base-p1"
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        try:
-            model_data = torch.load(MODEL_PATH, map_location=device)
-        except Exception as e:
-            st.error(f"Tidak dapat membaca file model: {str(e)}")
-            return None, None, None
+        with st.spinner("Mengunduh model dari Hugging Face..."):
+            try:
+                model_path = hf_hub_download(
+                    repo_id=MODEL_REPO,
+                    filename=MODEL_FILENAME
+                )
+                print(f"Model telah diunduh di: {model_path}")
+            except Exception as e:
+                st.error(f"Gagal mengunduh file dari Hugging Face. Pastikan Repo ID dan Filename benar. Error: {str(e)}")
+                return None, None, None
 
-        if 'model_config' not in model_data:
-            st.error("File model tidak memiliki konfigurasi yang diperlukan")
-            return None, None, None
+        with st.spinner("Memuat model ke memori..."):
+            try:
+                model_data = torch.load(model_path, map_location=device)
+            except Exception as e:
+                st.error(f"Tidak dapat membaca file model: {str(e)}")
+                return None, None, None
 
-        model_config = model_data['model_config']
-        NUM_LABELS = model_config.get('num_labels', 2)
-        DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
-        HIDDEN_DIM = model_config.get('hidden_dim', 256)
+            print(model_data)
+            if 'model_config' not in model_data:
+                st.error("File model tidak memiliki konfigurasi 'model_config' yang diperlukan")
+                return None, None, None
 
-        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+            model_config = model_data['model_config']
+            NUM_LABELS = model_config.get('num_labels', 2)
+            DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
+            HIDDEN_DIM = model_config.get('hidden_dim', 256)
 
-        config = AutoConfig.from_pretrained(
-            TOKENIZER_NAME,
-            num_labels=NUM_LABELS,
-            return_dict=True
-        )
+            tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-        model = IndoBERTCustom.from_pretrained(
-            TOKENIZER_NAME,
-            config=config,
-            dropout_rate=DROPOUT_RATE,
-            hidden_dim=HIDDEN_DIM
-        )
+            config = AutoConfig.from_pretrained(
+                TOKENIZER_NAME,
+                num_labels=NUM_LABELS,
+                return_dict=True
+            )
 
-        # Load state dict
-        if 'model_state_dict' in model_data:
-            model.load_state_dict(model_data['model_state_dict'], strict=True)
-        else:
-            st.error("File model tidak memiliki model_state_dict")
-            return None, None, None
+            model = IndoBERTCustom.from_pretrained(
+                TOKENIZER_NAME,
+                config=config,
+                dropout_rate=DROPOUT_RATE,
+                hidden_dim=HIDDEN_DIM
+            )
 
-        model.eval()
-        model = model.to(device)
+            if 'model_state_dict' in model_data:
+                model.load_state_dict(model_data['model_state_dict'], strict=True)
+            else:
+                st.error("File model tidak memiliki key 'model_state_dict'")
+                return None, None, None
 
-        return tokenizer, model, device
+            model.eval()
+            model = model.to(device)
+
+            return tokenizer, model, device
 
     except Exception as e:
-        st.error(f"Error memuat model: {str(e)}")
+        st.error(f"Error sistem memuat model: {str(e)}")
         return None, None, None
 
 @st.cache_resource
@@ -325,10 +396,6 @@ with st.sidebar:
         st.session_state.page = 'panduan'
         st.rerun()
 
-    # st.divider()
-    # st.markdown("### Info Model")
-    # st.info("Model: IndoBERT\nAkurasi: >85%")
-
 def process_single_text(text, normalization_dict, tokenizer, model, device):
     processed_text, prep_steps = preprocess_text(text, normalization_dict)
 
@@ -421,7 +488,7 @@ def display_batch_results(results, skipped_count, total_count):
 
     st.markdown("### Hasil Analisis")
     results_df = pd.DataFrame(results)
-    st.dataframe(results_df, use_container_width=True, hide_index=True)
+    st.dataframe(results_df, width="stretch", hide_index=True)
 
 def display_preprocessing_steps(preprocessing_steps):
     """Display preprocessing steps in expander"""
@@ -441,18 +508,17 @@ def display_visualizations_and_download():
             col1_vis, col2_vis = st.columns(2)
             with col1_vis:
                 if fig_pie:
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width="stretch")
                 else:
                     st.info("Belum ada data visualisasi sentimen.")
             with col2_vis:
                 if fig_bar:
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(fig_bar, width="stretch")
                 else:
                     st.info("Belum ada data visualisasi confidence.")
         except Exception as e:
             st.info("Data belum cukup untuk visualisasi.")
 
-        # Download button
         st.divider()
         df_download = pd.DataFrame(st.session_state.predictions)
         if not df_download.empty and 'timestamp' in df_download.columns:
@@ -467,7 +533,7 @@ def display_visualizations_and_download():
                     file_name=f"hasil_prediksi_econsens_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime='text/csv',
                     type="primary",
-                    use_container_width=True
+                    width="stretch"
                 )
 
 def halaman_prediksi():
@@ -498,9 +564,9 @@ def halaman_prediksi():
 
             col1, col2, col3 = st.columns([1, 0.5, 1])
             with col2:
-                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
+                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
             with col3:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
 
         if reset_btn:
             st.session_state.predictions = []
@@ -517,30 +583,27 @@ def halaman_prediksi():
                         result, prep_steps, error_msg = process_single_text(
                             text_input, normalization_dict, tokenizer, model, device
                         )
-                        
+
                         st.session_state.preprocessing_steps = prep_steps
-                        
+
                         if error_msg:
                             st.warning(f"⚠️ {error_msg}")
                         elif result:
-                            # Save prediction
                             st.session_state.predictions.append({
                                 'text': text_input[:100] + "...",
                                 'label': result['label'],
                                 'confidence': result['confidence'],
                                 'timestamp': datetime.now()
                             })
-                            
-                            # Display result
+
                             display_single_result(result)
             else:
                 st.warning("Silakan masukkan teks terlebih dahulu.")
-        
-        # Show preprocessing steps for text input
+
         if st.session_state.preprocessing_steps:
             display_preprocessing_steps(st.session_state.preprocessing_steps)
-    
-    else:  # Upload File method
+
+    else:
         with st.form("file_upload_form"):
             st.markdown("### Upload File")
             uploaded_file = st.file_uploader(
@@ -548,19 +611,18 @@ def halaman_prediksi():
                 type=['txt', 'csv', 'xlsx'],
                 help="Upload file berisi teks yang akan dianalisis. Untuk CSV/Excel, teks harus ada di kolom pertama."
             )
-            
+
             col1, col2, col3 = st.columns([1, 0.5, 1])
             with col2:
-                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
+                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
             with col3:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
-        
-        # Handle form submission
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
+
         if reset_btn:
             st.session_state.predictions = []
             st.session_state.preprocessing_steps = []
             st.rerun()
-        
+
         if submit_btn:
             if uploaded_file:
                 valid, message = validasi_file(uploaded_file)
@@ -568,21 +630,17 @@ def halaman_prediksi():
                     st.error(f"❌ {message}")
                 else:
                     with st.spinner("Sedang memproses file..."):
-                        # Read file
                         texts, error_msg = read_file_contents(uploaded_file)
-                        
+
                         if error_msg:
                             st.error(f"❌ {error_msg}")
                         elif texts:
-                            # Reset predictions for new batch
                             st.session_state.predictions = []
-                            
-                            # Process texts
+
                             results, skipped_count = process_file_texts(
                                 texts, normalization_dict, tokenizer, model, device
                             )
-                            
-                            # Display results
+
                             display_batch_results(results, skipped_count, len(texts))
                         else:
                             st.error("❌ File tidak berisi teks yang dapat diproses")
