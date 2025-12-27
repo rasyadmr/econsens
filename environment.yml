@@ -1,0 +1,16 @@
+name: torch-gpu
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - streamlit
+      - torch
+      - transformers
+      - numpy
+      - pandas
+      - plotly
+      - gdown
+      - datasets
