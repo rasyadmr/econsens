@@ -11,6 +11,8 @@ dependencies:
       - transformers
       - numpy
       - pandas
+      - wordcloud
+      - matplotlib
       - plotly
       - huggingface_hub
       - hf_xet
