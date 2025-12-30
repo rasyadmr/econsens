@@ -3,19 +3,19 @@ import pandas as pd
 import numpy as np
 import torch
 import html
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
-import plotly.express as px
+from transformers import AutoTokenizer, AutoConfig
 import plotly.graph_objects as go
 from datetime import datetime
 import re
-import string
-import time
 from model import IndoBERTCustom
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
 
 st.set_page_config(
     page_title="EconSens - Klasifikasi Sentimen Ekonomi Indonesia",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -26,14 +26,35 @@ if 'predictions' not in st.session_state:
     st.session_state.predictions = []
 if 'preprocessing_steps' not in st.session_state:
     st.session_state.preprocessing_steps = []
+if 'upload_results' not in st.session_state:
+    st.session_state.upload_results = None
+
+with st.sidebar:
+    with st.container(horizontal_alignment="center"):
+        # st.logo("./logo.svg", size="large")
+        st.image("./logo.svg", width=100)
+        # st.title("📊 EconSens", text_alignment="center")
+    st.divider()
+
+    if st.button("🏠 Halaman Utama", width="stretch", type= "primary" if st.session_state.page == "utama" else "secondary"):
+        st.session_state.page = "utama"
+        st.rerun()
+
+    if st.button("🔍 Prediksi Sentimen", width="stretch", type= "primary" if st.session_state.page == "prediksi" else "secondary"):
+        st.session_state.page = "prediksi"
+        st.rerun()
+
+    if st.button("📖 Panduan Penggunaan", width="stretch", type= "primary" if st.session_state.page == "panduan" else "secondary"):
+        st.session_state.page = 'panduan'
+        st.rerun()
 
 def halaman_utama():
     st.title("EconSens")
     st.markdown("### Aplikasi Klasifikasi Sentimen Perekonomian Indonesia")
 
-    col1, col2 = st.columns(2)
-
-    st.markdown("""
+    col1, col2 = st.columns(2, border=True)
+    with col1:
+        st.markdown("""
             #### Penjelasan Aplikasi EconSens
 
             EconSens merupakan aplikasi klasifikasi sentimen yang dirancang khusus untuk
@@ -42,8 +63,8 @@ def halaman_utama():
             dalam melakukan klasifikasi sentimen pada topik ekonomi Indonesia secara cepat
             dan akurat tanpa perlu mengeluarkan biaya apapun.
             """)
-
-    st.markdown("""
+    with col2:
+        st.markdown("""
             #### Penjelasan Eksperimen Model
 
             Model ini dilatih menggunakan dataset tweet ekonomi Indonesia dengan
@@ -52,25 +73,6 @@ def halaman_utama():
             lebih dari 5000 data dari media sosial X dengan akurasi yang didapatkan
             sebesar sekitar `94%`.
             """)
-    # with col1:
-    #     with st.container():
-    #         st.markdown("""
-    #         #### Penjelasan Aplikasi EconSens
-
-    #         EcoSens merupakan aplikasi klasifikasi sentimen yang dirancang khusus untuk
-    #         menganalisis opini publik tentang perekonomian Indonesia dari media sosial
-    #         menggunakan model IndoBERT yang telah dilatih.
-    #         """)
-
-    # with col2:
-    #     with st.container():
-    #         st.markdown("""
-    #         #### Penjelasan Eksperimen Model
-
-    #         Model ini dilatih menggunakan dataset tweet ekonomi Indonesia dengan
-    #         membandingkan 4 model: Logistic Regression, SVM, LSTM, dan IndoBERT,
-    #         di mana IndoBERT menunjukkan performa terbaik.
-    #         """)
 
     st.divider()
 
@@ -83,63 +85,6 @@ def halaman_utama():
         if st.button("Klasifikasi Sentimen", width="stretch", type="primary"):
             st.session_state.page = 'prediksi'
             st.rerun()
-
-# @st.cache_resource
-# def load_model():
-#     try:
-#         MODEL_REPO = "rasyadmr/skripsi_indobert"
-#         MODEL_FILENAME = "indobert_model.pth"
-#         TOKENIZER_NAME = "indobenchmark/indobert-base-p1"
-
-#         print(MODEL_FILENAME)
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-#         with st.spinner("Memuat model..."):
-#             try:
-#                 model_data = torch.load(MODEL_FILENAME, map_location=device)
-#             except Exception as e:
-#                 st.error(f"Tidak dapat membaca file model: {str(e)}")
-#                 return None, None, None
-
-#             if 'model_config' not in model_data:
-#                 st.error("File model tidak memiliki konfigurasi yang diperlukan")
-#                 return None, None, None
-
-#             model_config = model_data['model_config']
-#             NUM_LABELS = model_config.get('num_labels', 2)
-#             DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
-#             HIDDEN_DIM = model_config.get('hidden_dim', 256)
-
-#             tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-
-#             config = AutoConfig.from_pretrained(
-#                 TOKENIZER_NAME,
-#                 num_labels=NUM_LABELS,
-#                 return_dict=True
-#             )
-
-#             model = IndoBERTCustom.from_pretrained(
-#                 TOKENIZER_NAME,
-#                 config=config,
-#                 dropout_rate=DROPOUT_RATE,
-#                 hidden_dim=HIDDEN_DIM
-#             )
-
-#             # Load state dict
-#             if 'model_state_dict' in model_data:
-#                 model.load_state_dict(model_data['model_state_dict'], strict=True)
-#             else:
-#                 st.error("File model tidak memiliki model_state_dict")
-#                 return None, None, None
-
-#             model.eval()
-#             model = model.to(device)
-
-#             return tokenizer, model, device
-
-#     except Exception as e:
-#         st.error(f"Error memuat model: {str(e)}")
-#         return None, None, None
 
 @st.cache_resource
 def load_model():
@@ -158,19 +103,18 @@ def load_model():
                 )
                 print(f"Model telah diunduh di: {model_path}")
             except Exception as e:
-                st.error(f"Gagal mengunduh file dari Hugging Face. Pastikan Repo ID dan Filename benar. Error: {str(e)}")
+                st.error(f"❌ Gagal mengunduh file dari Hugging Face. Pastikan Repo ID dan Filename benar. Error: {str(e)}")
                 return None, None, None
 
         with st.spinner("Memuat model ke memori..."):
             try:
                 model_data = torch.load(model_path, map_location=device)
             except Exception as e:
-                st.error(f"Tidak dapat membaca file model: {str(e)}")
+                st.error(f"❌ Tidak dapat membaca file model: {str(e)}")
                 return None, None, None
 
-            print(model_data)
             if 'model_config' not in model_data:
-                st.error("File model tidak memiliki konfigurasi 'model_config' yang diperlukan")
+                st.error("❌ File model tidak memiliki konfigurasi 'model_config' yang diperlukan")
                 return None, None, None
 
             model_config = model_data['model_config']
@@ -196,7 +140,7 @@ def load_model():
             if 'model_state_dict' in model_data:
                 model.load_state_dict(model_data['model_state_dict'], strict=True)
             else:
-                st.error("File model tidak memiliki key 'model_state_dict'")
+                st.error("❌ File model tidak memiliki key 'model_state_dict'")
                 return None, None, None
 
             model.eval()
@@ -205,7 +149,7 @@ def load_model():
             return tokenizer, model, device
 
     except Exception as e:
-        st.error(f"Error sistem memuat model: {str(e)}")
+        st.error(f"❌ Error sistem memuat model: {str(e)}")
         return None, None, None
 
 @st.cache_resource
@@ -222,7 +166,7 @@ def load_normalization_dataset():
                     if slang and formal:
                         slang_dict[slang] = formal
         except Exception as e:
-            st.warning(f"Tidak dapat memuat dataset slang, menggunakan manual dict saja: {str(e)}")
+            st.warning(f"⚠️ Tidak dapat memuat dataset slang, menggunakan manual dict saja: {str(e)}")
 
         manual_normalization_dict = {
             'yg': 'yang', 'jg': 'juga', 'ga': 'tidak', 'gak': 'tidak', 'enggak': 'tidak',
@@ -236,7 +180,7 @@ def load_normalization_dataset():
         normalization_dict = {**slang_dict, **manual_normalization_dict}
         return normalization_dict
     except Exception as e:
-        st.error(f"Error memuat normalization dataset: {str(e)}")
+        st.error(f"❌ Error memuat normalization dataset: {str(e)}")
         return {}
 
 def normalize_text(text, normalization_dict):
@@ -380,33 +324,48 @@ def create_visualization(predictions):
     else:
         return fig_pie, None
 
-with st.sidebar:
-    st.title("EconSens", text_alignment="center")
-    st.divider()
+def create_wordcloud(text_data, title):
+    stopwords = set([
+        "yang", "di", "dan", "itu", "ini", "untuk", "dari", "ke", "akan",
+        "pada", "juga", "dengan", "adalah", "karena", "bisa", "ada",
+        "seperti", "saya", "tapi", "tidak", "ya", "yg", "gak", "kalo",
+        "udah", "sdh", "aja", "n", "t", "saja", "kalau", "biar", "bikin",
+        "bilang", "krn", "tp", "dgn", "sdh", "nih", "kok", "sih"
+    ])
 
-    if st.button("Halaman Utama", width="stretch", type= "primary" if st.session_state.page == "utama" else "secondary"):
-        st.session_state.page = "utama"
-        st.rerun()
+    combined_text = " ".join(text_data)
+    if not combined_text:
+        return None
 
-    if st.button("Prediksi Sentimen", width="stretch", type= "primary" if st.session_state.page == "prediksi" else "secondary"):
-        st.session_state.page = "prediksi"
-        st.rerun()
+    wordcloud = WordCloud(
+        width=800,
+        height=400,
+        stopwords=stopwords,
+        min_font_size=10,
+        max_words=20,
+        collocations=False,
+        background_color="white"
+    ).generate(combined_text)
 
-    if st.button("Panduan Penggunaan", width="stretch", type= "primary" if st.session_state.page == "panduan" else "secondary"):
-        st.session_state.page = 'panduan'
-        st.rerun()
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(wordcloud, interpolation='bilinear')
+    ax.axis('off')
+    ax.set_title(title, fontsize=16, pad=20)
+    plt.tight_layout(pad=0)
+
+    return fig
 
 def process_single_text(text, normalization_dict, tokenizer, model, device):
     processed_text, prep_steps = preprocess_text(text, normalization_dict)
 
     if not processed_text or not processed_text.strip():
-        return None, prep_steps, "Teks tidak dapat diklasifikasi karena hasil preprocessing kosong"
+        return None, prep_steps, processed_text, "Teks tidak dapat diklasifikasi karena hasil preprocessing kosong"
 
     result = predict_sentiment_torch(processed_text, tokenizer, model, device)
     if result and not result.get('error'):
-        return result, prep_steps, None
+        return result, prep_steps, processed_text, None
 
-    return None, prep_steps, "Terjadi kesalahan saat prediksi"
+    return None, prep_steps, processed_text, "Terjadi kesalahan saat prediksi"
 
 def process_file_texts(texts, normalization_dict, tokenizer, model, device):
     results = []
@@ -443,6 +402,8 @@ def process_file_texts(texts, normalization_dict, tokenizer, model, device):
 
         st.session_state.predictions.append({
             'text': text[:100] + "...",
+            'full_text': text,
+            'clean_text': processed_text,
             'label': result['label'],
             'confidence': result['confidence'],
             'timestamp': datetime.now()
@@ -450,7 +411,6 @@ def process_file_texts(texts, normalization_dict, tokenizer, model, device):
     return results, skipped_count
 
 def read_file_contents(uploaded_file):
-    """Read and parse uploaded file contents"""
     try:
         if uploaded_file.name.endswith('.txt'):
             content = uploaded_file.read().decode('utf-8')
@@ -466,7 +426,6 @@ def read_file_contents(uploaded_file):
         return None, f"Error membaca file: {str(e)}"
 
 def display_single_result(result):
-    """Display single prediction result"""
     col1_res, col2_res = st.columns([2, 1])
     with col1_res:
         st.markdown("### Hasil Prediksi")
@@ -481,7 +440,6 @@ def display_single_result(result):
         st.metric("Negatif", f"{result['scores']['Negatif']:.2%}")
 
 def display_batch_results(results, skipped_count, total_count):
-    """Display batch processing results"""
     st.success(f"Selesai! Berhasil memproses {total_count - skipped_count} data.")
     if skipped_count > 0:
         st.warning(f"⚠️ {skipped_count} data dilewati karena teks kosong setelah preprocessing.")
@@ -491,44 +449,72 @@ def display_batch_results(results, skipped_count, total_count):
     st.dataframe(results_df, width="stretch", hide_index=True)
 
 def display_preprocessing_steps(preprocessing_steps):
-    """Display preprocessing steps in expander"""
     with st.expander("Lihat Tahapan Preprocessing", expanded=False):
         for step, text in preprocessing_steps:
             st.text(f"{step}:")
             st.code(text if text else "(empty)", language=None)
 
-def display_visualizations_and_download():
+def display_visualizations_and_download(input_method):
     if st.session_state.predictions:
         st.divider()
-        st.markdown("### Visualisasi Prediksi")
+        st.markdown("### Visualisasi Analisis")
 
+        data_vis = st.session_state.predictions
         try:
-            fig_pie, fig_bar = create_visualization(st.session_state.predictions)
+            fig_pie, fig_bar = create_visualization(data_vis)
 
             col1_vis, col2_vis = st.columns(2)
             with col1_vis:
-                if fig_pie:
-                    st.plotly_chart(fig_pie, width="stretch")
-                else:
-                    st.info("Belum ada data visualisasi sentimen.")
+                if fig_pie: st.plotly_chart(fig_pie, width="stretch")
+                else: st.info("ℹ️ Data tidak cukup untuk Pie Chart.")
             with col2_vis:
-                if fig_bar:
-                    st.plotly_chart(fig_bar, width="stretch")
-                else:
-                    st.info("Belum ada data visualisasi confidence.")
+                if fig_bar: st.plotly_chart(fig_bar, width="stretch")
+                else: st.info("ℹ️ Data tidak cukup untuk Bar Chart.")
         except Exception as e:
-            st.info("Data belum cukup untuk visualisasi.")
+            st.error(f"❌ Gagal membuat grafik: {str(e)}")
+
+        if input_method == "Upload File (CSV/Excel/TXT)":
+            all_texts = [p.get('clean_text', p['text']) for p in data_vis]
+            pos_texts = [p.get('clean_text', p['text']) for p in data_vis if p['label'] == 'Positif']
+            neg_texts = [p.get('clean_text', p['text']) for p in data_vis if p['label'] == 'Negatif']
+
+            if all_texts:
+                st.markdown("#### Semua Kata")
+                fig_all = create_wordcloud(all_texts, "WordCloud - Keseluruhan")
+                if fig_all: st.pyplot(fig_all)
+
+            col_wc1, col_wc2 = st.columns(2)
+
+            with col_wc1:
+                if pos_texts:
+                    st.markdown("#### Sentimen Positif")
+                    fig_pos = create_wordcloud(pos_texts, "WordCloud - Positif")
+                    if fig_pos: st.pyplot(fig_pos)
+                else:
+                    st.info("ℹ️ Tidak ada data sentimen positif.")
+
+            with col_wc2:
+                if neg_texts:
+                    st.markdown("#### Sentimen Negatif")
+                    fig_neg = create_wordcloud(neg_texts, "WordCloud - Negatif")
+                    if fig_neg: st.pyplot(fig_neg)
+                else:
+                    st.info("ℹ️ Tidak ada data sentimen negatif.")
 
         st.divider()
         df_download = pd.DataFrame(st.session_state.predictions)
-        if not df_download.empty and 'timestamp' in df_download.columns:
-            df_download['timestamp'] = df_download['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            csv = df_download.to_csv(index=False).encode('utf-8')
+
+        cols_to_drop = ['clean_text', 'full_text']
+        df_download_clean = df_download.drop(columns=[c for c in cols_to_drop if c in df_download.columns])
+
+        if not df_download_clean.empty and 'timestamp' in df_download_clean.columns:
+            df_download_clean['timestamp'] = df_download_clean['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            csv = df_download_clean.to_csv(index=False).encode('utf-8')
 
             _, col_download, _ = st.columns([1, 2, 1])
             with col_download:
                 st.download_button(
-                    label="Download Hasil",
+                    label="Download Hasil (CSV)",
                     data=csv,
                     file_name=f"hasil_prediksi_econsens_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime='text/csv',
@@ -536,8 +522,13 @@ def display_visualizations_and_download():
                     width="stretch"
                 )
 
+def reset_action():
+    st.session_state.predictions = []
+    st.session_state.preprocessing_steps = []
+    st.session_state.upload_results = None
+
 def halaman_prediksi():
-    st.title("Prediksi Sentimen")
+    st.title("🔍 Prediksi Sentimen")
 
     tokenizer, model, device = load_model()
     normalization_dict = load_normalization_dataset()
@@ -548,7 +539,8 @@ def halaman_prediksi():
         ["Input Teks Manual", "Upload File (CSV/Excel/TXT)"],
         selection_mode="single",
         default="Input Teks Manual",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        on_change=reset_action
     )
 
     st.divider()
@@ -562,25 +554,25 @@ def halaman_prediksi():
                 placeholder="Masukkan teks tentang ekonomi Indonesia...\nContoh: Ekonomi Indonesia menunjukkan pertumbuhan positif di tahun ini"
             )
 
-            col1, col2, col3 = st.columns([1, 0.5, 1])
-            with col2:
+            _, col_reset, col_submit = st.columns([1, 0.5, 1])
+            with col_reset:
                 reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
-            with col3:
+            with col_submit:
                 submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
 
         if reset_btn:
-            st.session_state.predictions = []
-            st.session_state.preprocessing_steps = []
+            reset_action()
             st.rerun()
 
         if submit_btn:
+            reset_action()
             if text_input:
                 valid, message = validasi_teks(text_input)
                 if not valid:
                     st.error(f"❌ {message}")
                 else:
-                    with st.spinner("Sedang memproses..."):
-                        result, prep_steps, error_msg = process_single_text(
+                    with st.spinner("🔄 Sedang memproses..."):
+                        result, prep_steps, result_text, error_msg = process_single_text(
                             text_input, normalization_dict, tokenizer, model, device
                         )
 
@@ -589,8 +581,11 @@ def halaman_prediksi():
                         if error_msg:
                             st.warning(f"⚠️ {error_msg}")
                         elif result:
+                            # Karena sudah di-reset di atas, append ini akan menjadi item pertama dan satu-satunya
                             st.session_state.predictions.append({
                                 'text': text_input[:100] + "...",
+                                'full_text': text_input,
+                                'clean_text': result_text,
                                 'label': result['label'],
                                 'confidence': result['confidence'],
                                 'timestamp': datetime.now()
@@ -598,7 +593,7 @@ def halaman_prediksi():
 
                             display_single_result(result)
             else:
-                st.warning("Silakan masukkan teks terlebih dahulu.")
+                st.warning("⚠️ Silakan masukkan teks terlebih dahulu.")
 
         if st.session_state.preprocessing_steps:
             display_preprocessing_steps(st.session_state.preprocessing_steps)
@@ -612,18 +607,18 @@ def halaman_prediksi():
                 help="Upload file berisi teks yang akan dianalisis. Untuk CSV/Excel, teks harus ada di kolom pertama."
             )
 
-            col1, col2, col3 = st.columns([1, 0.5, 1])
-            with col2:
+            _, col_reset, col_submit = st.columns([1, 0.5, 1])
+            with col_reset:
                 reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
-            with col3:
+            with col_submit:
                 submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
 
         if reset_btn:
-            st.session_state.predictions = []
-            st.session_state.preprocessing_steps = []
+            reset_action()
             st.rerun()
 
         if submit_btn:
+            reset_action()
             if uploaded_file:
                 valid, message = validasi_file(uploaded_file)
                 if not valid:
@@ -635,60 +630,67 @@ def halaman_prediksi():
                         if error_msg:
                             st.error(f"❌ {error_msg}")
                         elif texts:
-                            st.session_state.predictions = []
-
                             results, skipped_count = process_file_texts(
                                 texts, normalization_dict, tokenizer, model, device
                             )
 
-                            display_batch_results(results, skipped_count, len(texts))
+                            st.session_state.upload_results = {
+                                'results': results,
+                                'skipped': skipped_count,
+                                'total': len(texts)
+                            }
                         else:
                             st.error("❌ File tidak berisi teks yang dapat diproses")
             else:
-                st.warning("Silakan upload file terlebih dahulu.")
+                st.warning("⚠️ Silakan upload file terlebih dahulu.")
 
-    display_visualizations_and_download()
+    if st.session_state.upload_results is not None:
+            data = st.session_state.upload_results
+            display_batch_results(data['results'], data['skipped'], data['total'])
+
+    display_visualizations_and_download(input_method)
 
     if not st.session_state.predictions and not submit_btn:
-        st.info("Pilih metode input dan tekan tombol 'Klasifikasi Sentimen' untuk memulai.")
+        st.info("ℹ️ Pilih metode input dan tekan tombol 'Klasifikasi Sentimen' untuk memulai.")
 
 def halaman_panduan():
-    st.title("Panduan Penggunaan")
+    st.title("📖 Panduan Penggunaan")
 
     tab1, tab2, tab3 = st.tabs(["Cara Penggunaan", "Interpretasi Hasil", "Detail Teknis"])
 
     with tab1:
         st.markdown("""
-        ### Cara Menggunakan Aplikasi
-
-        #### 1. Input Teks Langsung
-        1. Buka halaman **Prediksi Sentimen**
-        2. Masukkan teks pada kolom "Masukkan teks"
-        3. **Pastikan tidak ada file yang diupload**
-        4. Klik tombol **Klasifikasi Sentimen**
-        5. Hasil prediksi akan ditampilkan
-
-        #### 2. Upload File
-        1. Buka halaman **Prediksi Sentimen**
-        2. **Pastikan kolom teks kosong**
-        3. Klik area upload dan pilih file (.txt, .csv, atau .xlsx)
-        4. Klik tombol **Klasifikasi Sentimen**
-        5. Sistem akan memproses semua teks dalam file
-        6. Hasil ditampilkan dalam bentuk tabel
-
-        #### ⚠️ Penting:
-        - **Pilih salah satu metode input saja** (teks ATAU file)
-        - Jika kedua input terisi, sistem akan menampilkan error
-        - Tombol klasifikasi akan disabled jika tidak ada input atau ada konflik input
-
-        #### 3. Download Hasil
-        - Setelah melakukan prediksi, klik tombol **Download Hasil**
-        - File CSV berisi hasil analisis akan terunduh
+        ### 🆘 Cara Menggunakan Aplikasi
         """)
+
+        with st.expander("✏️ Input Teks Langsung"):
+            st.markdown("""
+                1. Buka halaman **Prediksi Sentimen**
+                2. Masukkan teks pada kolom "Masukkan teks"
+                3. **Pastikan tidak ada file yang diupload**
+                4. Klik tombol **Klasifikasi Sentimen**
+                5. Hasil prediksi akan ditampilkan
+            """)
+
+        with st.expander("📁 Upload File Teks"):
+            st.markdown("""
+                1. Buka halaman **Prediksi Sentimen**
+                2. **Pastikan kolom teks kosong**
+                3. Klik **Upload File** pada metode input
+                3. Klik area upload dan pilih file (.txt, .csv, atau .xlsx)
+                4. Klik tombol **Klasifikasi Sentimen**
+                5. Sistem akan memproses semua teks dalam file
+                6. Hasil ditampilkan dalam bentuk tabel
+            """)
+
+        with st.expander("📄 Download Hasil"):
+            st.markdown("""
+                - Setelah melakukan prediksi, klik tombol **Download Hasil** untuk mengunduh laporan dalam format CSV di paling bawah halaman.
+            """)
 
     with tab2:
         st.markdown("""
-        ### Interpretasi Hasil Analisis
+        ### 📊 Interpretasi Hasil Analisis
 
         #### Kategori Sentimen:
         """)
@@ -714,30 +716,36 @@ def halaman_panduan():
 
     with tab3:
         st.markdown("""
-        ### Detail Teknis
-
-        #### Model yang Digunakan:
-        - **Model**: IndoBERT Custom Architecture
-        - **Base Model**: indobenchmark/indobert-base-p1
-        - **Training Data**: Tweet ekonomi Indonesia (5000+ data)
-        - **Akurasi**: ~94% pada dataset uji
-        - **Max Token**: 128 tokens
-
-        #### Tahapan Preprocessing:
-        1. **Case folding**: Mengubah teks menjadi huruf kecil
-        2. **HTML Unescape**: Decode HTML entities
-        3. **Remove URLs**: Menghapus link website
-        4. **Remove mentions/hashtags**: Menghapus @username dan #hashtag
-        5. **Remove symbols & numbers**: Menghapus simbol dan angka
-        6. **Whitespace cleaning**: Normalisasi spasi
-        7. **Text normalization**: Normalisasi kata slang Indonesia
-
-        #### Format File yang Didukung:
-        - **TXT**: Plain text file
-        - **CSV**: Comma-separated values (teks di kolom pertama)
-        - **XLSX**: Excel file (teks di kolom pertama)
-        - **Ukuran maksimal**: 10MB
+        ### 🔧 Detail Teknis
         """)
+
+        with st.expander("⚙️ Model yang digunakan"):
+            st.markdown("""
+                - **Model**: IndoBERT Custom Architecture
+                - **Base Model**: indobenchmark/indobert-base-p1
+                - **Training Data**: Tweet ekonomi Indonesia (5000+ data)
+                - **Akurasi**: ~94% pada dataset uji
+                - **Max Token**: 128 tokens
+            """)
+
+        with st.expander("🧹 Tahapan Preprocessing"):
+            st.markdown("""
+                1. **Case folding**: Mengubah teks menjadi huruf kecil
+                2. **HTML Unescape**: Decode HTML entities
+                3. **Remove URLs**: Menghapus link website
+                4. **Remove mentions/hashtags**: Menghapus @username dan #hashtag
+                5. **Remove symbols & numbers**: Menghapus simbol dan angka
+                6. **Whitespace cleaning**: Normalisasi spasi
+                7. **Text normalization**: Normalisasi kata slang Indonesia
+            """)
+
+        with st.expander("☑️ Format File yang Didukung"):
+            st.markdown("""
+                - **TXT**: Plain text file
+                - **CSV**: Comma-separated values (teks di kolom pertama)
+                - **XLSX**: Excel file (teks di kolom pertama)
+                - **Ukuran maksimal**: 10MB
+            """)
 
 if __name__ == "__main__":
     if st.session_state.page == 'utama':

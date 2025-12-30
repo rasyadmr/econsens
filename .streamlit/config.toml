@@ -1,19 +1,15 @@
 [theme]
-# Mengatur tema warna agar sesuai dengan identitas EconSens
 primaryColor = "#00CC88"
+
+[theme.light]
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F0F2F6"
 textColor = "#262730"
 font = "sans serif"
 
 [server]
-# Membatasi ukuran upload file di level server (dalam MB)
-# Di kode Python Anda membatasi 10MB, jadi kita set di sini juga agar sinkron.
 maxUploadSize = 10
-enableCORS = false
 
 [client]
-# Menghilangkan pesan error detail di layar user (lebih rapi untuk production)
 showErrorDetails = false
-# Mengubah judul di tab browser (fallback jika st.set_page_config gagal load)
 toolbarMode = "viewer"
