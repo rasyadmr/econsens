@@ -15,5 +15,6 @@ dependencies:
       - matplotlib
       - plotly
       - huggingface_hub
+      - openpyxl
       - hf_xet
       - datasets
