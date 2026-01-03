@@ -5,13 +5,16 @@ import torch
 import html
 from transformers import AutoTokenizer, AutoConfig
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from io import BytesIO
 import re
 from model import IndoBERTCustom
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+
+WIB = timezone(timedelta(hours=7))
 
 st.set_page_config(
     page_title="EconSens - Klasifikasi Sentimen Ekonomi Indonesia",
@@ -31,9 +34,7 @@ if 'upload_results' not in st.session_state:
 
 with st.sidebar:
     with st.container(horizontal_alignment="center"):
-        # st.logo("./logo.svg", size="large")
         st.image("./logo.svg", width=100)
-        # st.title("📊 EconSens", text_alignment="center")
     st.divider()
 
     if st.button("🏠 Halaman Utama", width="stretch", type= "primary" if st.session_state.page == "utama" else "secondary"):
@@ -49,13 +50,15 @@ with st.sidebar:
         st.rerun()
 
 def halaman_utama():
-    st.title("EconSens")
-    st.markdown("### Aplikasi Klasifikasi Sentimen Perekonomian Indonesia")
+    with st.container(horizontal_alignment="center"):
+        st.image("./logo.svg", width=200)
+
+    # st.markdown("### Aplikasi Klasifikasi Sentimen Perekonomian Indonesia")
 
     col1, col2 = st.columns(2, border=True)
     with col1:
         st.markdown("""
-            #### Penjelasan Aplikasi EconSens
+            #### Aplikasi Klasifikasi Sentimen Perekonomian Indonesia
 
             EconSens merupakan aplikasi klasifikasi sentimen yang dirancang khusus untuk
             menganalisis opini publik tentang perekonomian Indonesia dari media sosial
@@ -65,13 +68,13 @@ def halaman_utama():
             """)
     with col2:
         st.markdown("""
-            #### Penjelasan Eksperimen Model
+            #### Model yang Digunakan untuk EconSens
 
             Model ini dilatih menggunakan dataset tweet ekonomi Indonesia dengan
             membandingkan 4 model: Logistic Regression, SVM, LSTM, dan IndoBERT,
             di mana IndoBERT menunjukkan performa terbaik. Model IndoBERT telah dilatih menggunakan
             lebih dari 5000 data dari media sosial X dengan akurasi yang didapatkan
-            sebesar sekitar `94%`.
+            sekitar `94%`.
             """)
 
     st.divider()
@@ -95,58 +98,56 @@ def load_model():
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        with st.spinner("Mengunduh model dari Hugging Face..."):
-            try:
-                model_path = hf_hub_download(
-                    repo_id=MODEL_REPO,
-                    filename=MODEL_FILENAME
-                )
-                print(f"Model telah diunduh di: {model_path}")
-            except Exception as e:
-                st.error(f"❌ Gagal mengunduh file dari Hugging Face. Pastikan Repo ID dan Filename benar. Error: {str(e)}")
-                return None, None, None
-
-        with st.spinner("Memuat model ke memori..."):
-            try:
-                model_data = torch.load(model_path, map_location=device)
-            except Exception as e:
-                st.error(f"❌ Tidak dapat membaca file model: {str(e)}")
-                return None, None, None
-
-            if 'model_config' not in model_data:
-                st.error("❌ File model tidak memiliki konfigurasi 'model_config' yang diperlukan")
-                return None, None, None
-
-            model_config = model_data['model_config']
-            NUM_LABELS = model_config.get('num_labels', 2)
-            DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
-            HIDDEN_DIM = model_config.get('hidden_dim', 256)
-
-            tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-
-            config = AutoConfig.from_pretrained(
-                TOKENIZER_NAME,
-                num_labels=NUM_LABELS,
-                return_dict=True
+        try:
+            model_path = hf_hub_download(
+                repo_id=MODEL_REPO,
+                filename=MODEL_FILENAME
             )
+            print(f"Model telah diunduh di: {model_path}")
+        except Exception as e:
+            st.error(f"❌ Gagal mengunduh file dari Hugging Face. Pastikan Repo ID dan Filename benar. Error: {str(e)}")
+            return None, None, None
 
-            model = IndoBERTCustom.from_pretrained(
-                TOKENIZER_NAME,
-                config=config,
-                dropout_rate=DROPOUT_RATE,
-                hidden_dim=HIDDEN_DIM
-            )
+        try:
+            model_data = torch.load(model_path, map_location=device)
+        except Exception as e:
+            st.error(f"❌ Tidak dapat membaca file model: {str(e)}")
+            return None, None, None
 
-            if 'model_state_dict' in model_data:
-                model.load_state_dict(model_data['model_state_dict'], strict=True)
-            else:
-                st.error("❌ File model tidak memiliki key 'model_state_dict'")
-                return None, None, None
+        if 'model_config' not in model_data:
+            st.error("❌ File model tidak memiliki konfigurasi 'model_config' yang diperlukan")
+            return None, None, None
 
-            model.eval()
-            model = model.to(device)
+        model_config = model_data['model_config']
+        NUM_LABELS = model_config.get('num_labels', 2)
+        DROPOUT_RATE = model_config.get('dropout_rate', 0.3)
+        HIDDEN_DIM = model_config.get('hidden_dim', 256)
 
-            return tokenizer, model, device
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+
+        config = AutoConfig.from_pretrained(
+            TOKENIZER_NAME,
+            num_labels=NUM_LABELS,
+            return_dict=True
+        )
+
+        model = IndoBERTCustom.from_pretrained(
+            TOKENIZER_NAME,
+            config=config,
+            dropout_rate=DROPOUT_RATE,
+            hidden_dim=HIDDEN_DIM
+        )
+
+        if 'model_state_dict' in model_data:
+            model.load_state_dict(model_data['model_state_dict'], strict=True)
+        else:
+            st.error("❌ File model tidak memiliki key 'model_state_dict'")
+            return None, None, None
+
+        model.eval()
+        model = model.to(device)
+
+        return tokenizer, model, device
 
     except Exception as e:
         st.error(f"❌ Error sistem memuat model: {str(e)}")
@@ -264,13 +265,17 @@ def validasi_teks(text):
     return True, "Valid"
 
 def validasi_file(file):
-    valid_extensions = ['txt', 'csv', 'xlsx']
+    if file is None:
+        return False, "File tidak ditemukan"
+
     file_ext = file.name.split('.')[-1].lower()
 
-    if file_ext not in valid_extensions:
-        return False, f"Format file tidak didukung. Gunakan: {', '.join(valid_extensions)}"
+    if file_ext != 'xlsx':
+        return False, "Format file harus Excel (.xlsx)"
     if file.size > 10 * 1024 * 1024:
         return False, "Ukuran file terlalu besar (maksimal 10MB)"
+    if file.size == 0:
+        return False, "File kosong"
     return True, "Valid"
 
 def create_visualization(predictions):
@@ -406,24 +411,24 @@ def process_file_texts(texts, normalization_dict, tokenizer, model, device):
             'clean_text': processed_text,
             'label': result['label'],
             'confidence': result['confidence'],
-            'timestamp': datetime.now()
+            'timestamp': datetime.now(WIB)
         })
     return results, skipped_count
 
 def read_file_contents(uploaded_file):
     try:
-        if uploaded_file.name.endswith('.txt'):
-            content = uploaded_file.read().decode('utf-8')
-            texts = [line.strip() for line in content.split('\n') if line.strip()]
-        elif uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-            texts = df.iloc[:, 0].dropna().astype(str).tolist()
-        else:
-            df = pd.read_excel(uploaded_file)
-            texts = df.iloc[:, 0].dropna().astype(str).tolist()
+        df = pd.read_excel(uploaded_file)
+        if df.empty:
+            return None, "File Excel kosong"
+
+        texts = df.iloc[:, 0].dropna().astype(str).tolist()
+
+        if not texts:
+            return None, "Tidak ada teks di kolom pertama file Excel"
+
         return texts, None
     except Exception as e:
-        return None, f"Error membaca file: {str(e)}"
+        return None, f"Error membaca file Excel: {str(e)}"
 
 def display_single_result(result):
     col1_res, col2_res = st.columns([2, 1])
@@ -473,7 +478,7 @@ def display_visualizations_and_download(input_method):
         except Exception as e:
             st.error(f"❌ Gagal membuat grafik: {str(e)}")
 
-        if input_method == "Upload File (CSV/Excel/TXT)":
+        if input_method == "Upload File Excel":
             all_texts = [p.get('clean_text', p['text']) for p in data_vis]
             pos_texts = [p.get('clean_text', p['text']) for p in data_vis if p['label'] == 'Positif']
             neg_texts = [p.get('clean_text', p['text']) for p in data_vis if p['label'] == 'Negatif']
@@ -502,25 +507,44 @@ def display_visualizations_and_download(input_method):
                     st.info("ℹ️ Tidak ada data sentimen negatif.")
 
         st.divider()
-        df_download = pd.DataFrame(st.session_state.predictions)
 
-        cols_to_drop = ['clean_text', 'full_text']
-        df_download_clean = df_download.drop(columns=[c for c in cols_to_drop if c in df_download.columns])
+        df_export = pd.DataFrame({
+            'Teks': [p['text'] for p in st.session_state.predictions],
+            'Sentimen': [p['label'] for p in st.session_state.predictions],
+            'Tingkat Keyakinan (%)': [f"{p['confidence']*100:.2f}" for p in st.session_state.predictions],
+            'Waktu Analisis': [p['timestamp'].strftime('%Y-%m-%d %H:%M:%S WIB') for p in st.session_state.predictions]
+        })
 
-        if not df_download_clean.empty and 'timestamp' in df_download_clean.columns:
-            df_download_clean['timestamp'] = df_download_clean['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            csv = df_download_clean.to_csv(index=False).encode('utf-8')
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_export.to_excel(writer, index=False, sheet_name='Hasil Analisis')
 
-            _, col_download, _ = st.columns([1, 2, 1])
-            with col_download:
-                st.download_button(
-                    label="Download Hasil (CSV)",
-                    data=csv,
-                    file_name=f"hasil_prediksi_econsens_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime='text/csv',
-                    type="primary",
-                    width="stretch"
-                )
+            worksheet = writer.sheets['Hasil Analisis']
+
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+
+        excel_data = output.getvalue()
+
+        _, col_download, _ = st.columns([1, 2, 1])
+        with col_download:
+            st.download_button(
+                label="📥 Download Hasil (Excel)",
+                data=excel_data,
+                file_name=f"hasil_analisis_sentimen_{datetime.now(WIB).strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                type="primary",
+                use_container_width=True
+            )
 
 def reset_action():
     st.session_state.predictions = []
@@ -536,7 +560,7 @@ def halaman_prediksi():
     st.markdown("### Pilih Metode Input")
     input_method = st.segmented_control(
         "Metode:",
-        ["Input Teks Manual", "Upload File (CSV/Excel/TXT)"],
+        ["Input Teks Manual", "Upload File Excel"],
         selection_mode="single",
         default="Input Teks Manual",
         label_visibility="collapsed",
@@ -556,9 +580,9 @@ def halaman_prediksi():
 
             _, col_reset, col_submit = st.columns([1, 0.5, 1])
             with col_reset:
-                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
+                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
             with col_submit:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
 
         if reset_btn:
             reset_action()
@@ -581,14 +605,13 @@ def halaman_prediksi():
                         if error_msg:
                             st.warning(f"⚠️ {error_msg}")
                         elif result:
-                            # Karena sudah di-reset di atas, append ini akan menjadi item pertama dan satu-satunya
                             st.session_state.predictions.append({
                                 'text': text_input[:100] + "...",
                                 'full_text': text_input,
                                 'clean_text': result_text,
                                 'label': result['label'],
                                 'confidence': result['confidence'],
-                                'timestamp': datetime.now()
+                                'timestamp': datetime.now(WIB)
                             })
 
                             display_single_result(result)
@@ -600,18 +623,18 @@ def halaman_prediksi():
 
     else:
         with st.form("file_upload_form"):
-            st.markdown("### Upload File")
+            st.markdown("### Upload File Excel")
             uploaded_file = st.file_uploader(
-                "Import File Excel/CSV/TXT",
-                type=['txt', 'csv', 'xlsx'],
-                help="Upload file berisi teks yang akan dianalisis. Untuk CSV/Excel, teks harus ada di kolom pertama."
+                "Import File Excel",
+                type=['xlsx'],
+                help="Upload file Excel (.xlsx) berisi teks yang akan dianalisis. Teks harus ada di kolom pertama."
             )
 
             _, col_reset, col_submit = st.columns([1, 0.5, 1])
             with col_reset:
-                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
+                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
             with col_submit:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
 
         if reset_btn:
             reset_action()
@@ -624,7 +647,7 @@ def halaman_prediksi():
                 if not valid:
                     st.error(f"❌ {message}")
                 else:
-                    with st.spinner("Sedang memproses file..."):
+                    with st.spinner("Sedang memproses file Excel..."):
                         texts, error_msg = read_file_contents(uploaded_file)
 
                         if error_msg:
@@ -640,18 +663,18 @@ def halaman_prediksi():
                                 'total': len(texts)
                             }
                         else:
-                            st.error("❌ File tidak berisi teks yang dapat diproses")
+                            st.error("❌ File Excel tidak berisi teks yang dapat diproses")
             else:
-                st.warning("⚠️ Silakan upload file terlebih dahulu.")
+                st.warning("⚠️ Silakan upload file Excel terlebih dahulu.")
 
     if st.session_state.upload_results is not None:
-            data = st.session_state.upload_results
-            display_batch_results(data['results'], data['skipped'], data['total'])
+        data = st.session_state.upload_results
+        display_batch_results(data['results'], data['skipped'], data['total'])
 
     display_visualizations_and_download(input_method)
 
     if not st.session_state.predictions and not submit_btn:
-        st.info("ℹ️ Pilih metode input dan tekan tombol 'Klasifikasi Sentimen' untuk memulai.")
+        st.info("ℹ️ Pilih metode input, masukkan data, dan tekan tombol 'Klasifikasi Sentimen' untuk memulai.")
 
 def halaman_panduan():
     st.title("📖 Panduan Penggunaan")
@@ -666,26 +689,31 @@ def halaman_panduan():
         with st.expander("✏️ Input Teks Langsung"):
             st.markdown("""
                 1. Buka halaman **Prediksi Sentimen**
-                2. Masukkan teks pada kolom "Masukkan teks"
-                3. **Pastikan tidak ada file yang diupload**
+                2. Pilih metode **Input Teks Manual**
+                3. Masukkan teks pada kolom yang tersedia
                 4. Klik tombol **Klasifikasi Sentimen**
-                5. Hasil prediksi akan ditampilkan
+                5. Hasil prediksi akan ditampilkan secara langsung
             """)
 
-        with st.expander("📁 Upload File Teks"):
+        with st.expander("📁 Upload File Excel"):
             st.markdown("""
                 1. Buka halaman **Prediksi Sentimen**
-                2. **Pastikan kolom teks kosong**
-                3. Klik **Upload File** pada metode input
-                3. Klik area upload dan pilih file (.txt, .csv, atau .xlsx)
-                4. Klik tombol **Klasifikasi Sentimen**
-                5. Sistem akan memproses semua teks dalam file
-                6. Hasil ditampilkan dalam bentuk tabel
+                2. Pilih metode **Upload File Excel**
+                3. Klik area upload dan pilih file Excel (.xlsx)
+                4. Pastikan teks yang akan dianalisis ada di **kolom pertama**
+                5. Klik tombol **Klasifikasi Sentimen**
+                6. Sistem akan memproses semua teks dalam file
+                7. Hasil ditampilkan dalam bentuk tabel
             """)
 
         with st.expander("📄 Download Hasil"):
             st.markdown("""
-                - Setelah melakukan prediksi, klik tombol **Download Hasil** untuk mengunduh laporan dalam format CSV di paling bawah halaman.
+                - Setelah melakukan prediksi, klik tombol **Download Hasil (Excel)**
+                - File Excel akan berisi:
+                - Teks asli
+                - Hasil sentimen (Positif/Negatif)
+                - Tingkat keyakinan dalam persentase
+                - Waktu analisis (WIB)
             """)
 
     with tab2:
@@ -741,9 +769,8 @@ def halaman_panduan():
 
         with st.expander("☑️ Format File yang Didukung"):
             st.markdown("""
-                - **TXT**: Plain text file
-                - **CSV**: Comma-separated values (teks di kolom pertama)
-                - **XLSX**: Excel file (teks di kolom pertama)
+                - **Format**: Excel (.xlsx)
+                - **Struktur**: Teks harus berada di kolom pertama
                 - **Ukuran maksimal**: 10MB
             """)
 
