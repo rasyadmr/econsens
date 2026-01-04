@@ -204,7 +204,7 @@ def preprocess_text(text, normalization_dict):
     text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
     steps.append(("Menghilangkan URL", text))
 
-    text = re.sub(r'@\w+|#\w+', '', text)
+    text = re.sub(r'@\S+|#\S+', '', text)
     steps.append(("Menghilangkan mentions/hashtags", text))
 
     text = re.sub(r'[^a-zA-Z\s]', ' ', text)
@@ -406,7 +406,7 @@ def process_file_texts(texts, normalization_dict, tokenizer, model, device):
         })
 
         st.session_state.predictions.append({
-            'text': text[:100] + "...",
+            'text': text[:100] + "..." if len(text) > 100 else text,
             'full_text': text,
             'clean_text': processed_text,
             'label': result['label'],
@@ -417,7 +417,7 @@ def process_file_texts(texts, normalization_dict, tokenizer, model, device):
 
 def read_file_contents(uploaded_file):
     try:
-        df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file, header=None)
         if df.empty:
             return None, "File Excel kosong"
 
@@ -509,7 +509,7 @@ def display_visualizations_and_download(input_method):
         st.divider()
 
         df_export = pd.DataFrame({
-            'Teks': [p['text'] for p in st.session_state.predictions],
+            'Teks': [p['full_text'] for p in st.session_state.predictions],
             'Sentimen': [p['label'] for p in st.session_state.predictions],
             'Tingkat Keyakinan (%)': [f"{p['confidence']*100:.2f}" for p in st.session_state.predictions],
             'Waktu Analisis': [p['timestamp'].strftime('%Y-%m-%d %H:%M:%S WIB') for p in st.session_state.predictions]
@@ -543,7 +543,7 @@ def display_visualizations_and_download(input_method):
                 file_name=f"hasil_analisis_sentimen_{datetime.now(WIB).strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
 
 def reset_action():
@@ -580,9 +580,9 @@ def halaman_prediksi():
 
             _, col_reset, col_submit = st.columns([1, 0.5, 1])
             with col_reset:
-                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
+                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
             with col_submit:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
 
         if reset_btn:
             reset_action()
@@ -632,9 +632,9 @@ def halaman_prediksi():
 
             _, col_reset, col_submit = st.columns([1, 0.5, 1])
             with col_reset:
-                reset_btn = st.form_submit_button("Reset", type="secondary", use_container_width=True)
+                reset_btn = st.form_submit_button("Reset", type="secondary", width="stretch")
             with col_submit:
-                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", use_container_width=True)
+                submit_btn = st.form_submit_button("Klasifikasi Sentimen", type="primary", width="stretch")
 
         if reset_btn:
             reset_action()
