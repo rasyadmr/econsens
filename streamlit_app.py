@@ -710,10 +710,10 @@ def halaman_panduan():
             st.markdown("""
                 - Setelah melakukan prediksi, klik tombol **Download Hasil (Excel)**
                 - File Excel akan berisi:
-                - Teks asli
-                - Hasil sentimen (Positif/Negatif)
-                - Tingkat keyakinan dalam persentase
-                - Waktu analisis (WIB)
+                    - Teks asli
+                    - Hasil sentimen (Positif/Negatif)
+                    - Tingkat keyakinan dalam persentase
+                    - Waktu analisis (WIB)
             """)
 
     with tab2:

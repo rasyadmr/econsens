@@ -6,15 +6,15 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-      - streamlit
-      - torch
-      - transformers
-      - numpy
-      - pandas
-      - wordcloud
-      - matplotlib
-      - plotly
-      - huggingface_hub
-      - openpyxl
-      - hf_xet
-      - datasets
+      - streamlit==1.52.2
+      - torch==2.8.0
+      - transformers==4.57.0
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - wordcloud==1.9.4
+      - matplotlib==3.10.6
+      - plotly==6.5.0
+      - huggingface_hub==0.35.3
+      - openpyxl==3.1.5
+      - hf_xet==1.2.0
+      - datasets==4.1.1
